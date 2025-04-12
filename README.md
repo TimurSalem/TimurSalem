@@ -75,7 +75,7 @@
 
 ## Свяжитесь со мной 📫
 
-- Telegram: [@nelosharik](https://t.me/nelosharik)
+- Telegram: [@timursalem](https://t.me/timursalem)
 - Discord: timursalem
 - Email: ваш[timursalem12@gmail.com](mailto:_timursalem12@gmail.com)
 
