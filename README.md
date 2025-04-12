@@ -77,7 +77,7 @@
 
 - Telegram: [@timursalem](https://t.me/timursalem)
 - Discord: timursalem
-- Email: ваш[timursalem12@gmail.com](mailto:_timursalem12@gmail.com)
+- Email: [timursalem12@gmail.com](mailto:_timursalem12@gmail.com)
 
 ---
 
