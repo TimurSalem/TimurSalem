@@ -257,6 +257,16 @@ def summarize(w, limits, big_miss):
     if hit:
         s["to_hit_min"] = (hit - w["start"]).total_seconds() / 60
         s["cost_to_hit"] = sum(r["cost"] for r in rs if r["t"] <= hit)
+    # usage until the limit (or the whole window), on several scales at once,
+    # so the comparison does not depend on how the plan weights token types
+    upto = [r for r in rs if not hit or r["t"] <= hit]
+    s["m"] = {
+        "calls": len(upto),
+        "output tokens": sum(r["out"] for r in upto),
+        "output + cache write": sum(r["out"] + r["cw5"] + r["cw1h"] for r in upto),
+        "all tokens incl. cache read": sum(r["inp"] + r["out"] + r["cw5"] + r["cw1h"] + r["cr"] for r in upto),
+        "API-equivalent $": sum(r["cost"] for r in upto),
+    }
     return s
 
 
@@ -342,15 +352,37 @@ def main():
         for i, s in ((sums.index(s) + 1, s) for s in hits):
             print(f"  #{i}: {s['to_hit_min']:.0f} min after window start, ${s['cost_to_hit']:.2f}, "
                   f"{s['misses']} cold-cache requests, max context {fmt_tok(s['max_ctx'])}")
-        if len(hits) >= 2:
-            last, prev = hits[-1], hits[:-1]
-            med = statistics.median(h["cost_to_hit"] for h in prev)
-            ratio = last["cost_to_hit"] / med if med else float("nan")
-            print(f"  Latest vs median of earlier: ${last['cost_to_hit']:.2f} vs ${med:.2f} (x{ratio:.2f}). "
-                  "Near x1.0 = the meter behaved the same and the difference is in what the requests cost; "
-                  "far below x1.0 = the window filled on much less usage than before.")
     else:
         print("\nNo 'limit reached' messages found in the transcripts for this period.")
+
+    if len(hits) >= 2:
+        last, ref = hits[-1], hits[:-1]
+        label = "earlier windows that reached 100%"
+    else:
+        last, ref = sums[-1], [s for s in sums[:-1] if s["n"] >= 10]
+        label = "earlier windows with >= 10 calls (not necessarily at 100%)"
+    if ref:
+        print(f"\nLatest window #{sums.index(last) + 1} (up to the limit) vs median of {len(ref)} {label}:")
+        for k, v in last["m"].items():
+            med = statistics.median(s["m"][k] for s in ref)
+            ratio = f"x{v / med:.2f}" if med else "n/a"
+            show = (lambda x: f"${x:.2f}") if k.endswith("$") else (lambda x: f"{x:,.0f}")
+            print(f"  {k:<28} {show(v):>14} vs {show(med):>14}   {ratio}")
+        print("  All ratios far below x1 = the limit filled on far less usage of every kind than before.\n"
+              "  Low calls/tokens but $ near x1 = the few calls were unusually expensive (cold cache, fallback).")
+
+    days = defaultdict(lambda: Counter())
+    for r in reqs:
+        d = days[loc(r["t"]).date()]
+        d["calls"] += 1
+        for k in ("inp", "cw5", "cw1h", "cr", "out", "cost"):
+            d[k] += r[k]
+    print(f"\nPer day ({args.tz or 'system time zone'}), to match against /stats:")
+    print(f"  {'day':<10} {'calls':>6} {'in':>7} {'cache write':>12} {'cache read':>11} {'out':>7} {'out+cw':>8} {'$':>8}")
+    for day in sorted(days):
+        d = days[day]
+        print(f"  {day.isoformat():<10} {d['calls']:>6} {fmt_tok(d['inp']):>7} {fmt_tok(d['cw5'] + d['cw1h']):>12} "
+              f"{fmt_tok(d['cr']):>11} {fmt_tok(d['out']):>7} {fmt_tok(d['out'] + d['cw5'] + d['cw1h']):>8} {d['cost']:>8.2f}")
 
     if _unpriced:
         print(f"\n! Unpriced models counted as $0: {dict(_unpriced)}")
